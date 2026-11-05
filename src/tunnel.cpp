@@ -36,6 +36,10 @@ namespace libxtun
 
     ResultXtun<std::unique_ptr<Tunnel>> Tunnel::fromOpts(const libxtun_tunnel_opts &opts)
     {
+        if (opts.excluded_apps != nullptr && *opts.excluded_apps != nullptr) {
+            return fail(LIBXTUN_ERR_UNSUPPORTED);
+        }
+        
         auto dnsDefaults = cinterop::parseListT<net::IpAddress>(opts.dns);
         if (!dnsDefaults) {
             return fail(dnsDefaults.error());

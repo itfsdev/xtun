@@ -96,6 +96,10 @@ struct libxtun_tunnel_opts
     int mtu;
     int health_seconds;
     int macos_group;
+    /* Windows x64: absolute local EXE paths in UTF-8, terminated by NULL.
+     * If it's NULL or an empty, then per-app VPN exclusions are disabled.
+     * Changing the list requires creating a new tunnel. */
+    const char *const *excluded_apps;
 };
 
 typedef int (*libxtun_tunfactory_createtun)(const char *const *dns, const char *const *includeRoutes,

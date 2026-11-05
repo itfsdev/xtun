@@ -27,6 +27,19 @@ TEST(ContractTunnel, NewRejectsOutOfRangeKillswitch)
     libxtun_tunnel_free(&tun);
 }
 
+TEST(ContractTunnel, NewRejectsUnsupportedExcludedApps)
+{
+    const char *const excludedApps[] = { "C:\\Apps\\app.exe", nullptr };
+    libxtun_tunnel_opts opts {};
+    opts.size = sizeof(opts);
+    opts.excluded_apps = excludedApps;
+
+    libxtun_tunnel tun {};
+    EXPECT_EQ(libxtun_tunnel_new(&tun, &opts), LIBXTUN_ERR_UNSUPPORTED);
+    EXPECT_EQ(tun.handle, nullptr);
+    libxtun_tunnel_free(&tun);
+}
+
 class ContractTunnelFd : public testing::TestWithParam<int>
 {
 };
