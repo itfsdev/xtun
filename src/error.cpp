@@ -11,6 +11,9 @@ extern "C" const char *libxtun_strerror(int error)
     case LIBXTUN_ERR_KILLSWITCH: return "killswitch error";
     case LIBXTUN_ERR_SYSTEM: return "system error";
     case LIBXTUN_ERR_DNS: return "dns error";
+    case LIBXTUN_ERR_SPLIT_BUSY: return "split-tunnel driver is busy";
+    case LIBXTUN_ERR_ACCESS_DENIED: return "access denied";
+    case LIBXTUN_ERR_SPLIT_DRIVER: return "split-tunnel driver error";
     case LIBXTUN_ERR_RESERVED_0:
     case LIBXTUN_ERR_RESERVED_1:
     case LIBXTUN_ERR_RESERVED_2:

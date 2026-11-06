@@ -9,6 +9,9 @@ public class XtunException extends RuntimeException {
     public static final int LIBXTUN_ERR_KILLSWITCH = -5;
     public static final int LIBXTUN_ERR_SYSTEM = -6;
     public static final int LIBXTUN_ERR_DNS = -7;
+    public static final int LIBXTUN_ERR_SPLIT_BUSY = -8;
+    public static final int LIBXTUN_ERR_ACCESS_DENIED = -9;
+    public static final int LIBXTUN_ERR_SPLIT_DRIVER = -10;
 
     public static final int LIBXTUN_ERR_JNI_NOMEM = -10000;
     public static final int LIBXTUN_ERR_JNI_WRONG_PARAM = -10001;

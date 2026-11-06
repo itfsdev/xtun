@@ -34,6 +34,8 @@ class Xtun(ConanFile):
     def requirements(self):
         if self.options.bundle_wintun and self.settings.os == "Windows":
             self.requires("wintun/0.14.1@amnezia")
+        if self.settings.os == "Windows" and self.settings.arch == "x86_64":
+            self.requires("win-split-tunnel/1.2.5.0@amnezia", headers=False, libs=False, run=True)
         if self.settings.os == "Linux":
             self.requires("libsystemd/262.2")
     
@@ -86,7 +88,7 @@ class Xtun(ConanFile):
         self.cpp_info.set_property("cmake_target_name", "amnezia::xtun")
         self.cpp_info.libs = ["xtun", "libgoxtun"] if self.settings.os == "Windows" else ["xtun", "goxtun"]
         if self.settings.os == "Windows":
-            self.cpp_info.system_libs = ["iphlpapi", "ws2_32", "fwpuclnt"]
+            self.cpp_info.system_libs = ["iphlpapi", "ws2_32", "fwpuclnt", "advapi32"]
             self.cpp_info.defines = ["WIN32_LEAN_AND_MEAN", "NOMINMAX"]
         elif self.settings.os in ("Linux", "Android"):
             self.cpp_info.system_libs = ["pthread", "dl"]

@@ -15,6 +15,7 @@
     #include "tun_device_windows.cpp"
     #include "tun_device_windows.h"
     #include "split_tunnel_windows_data.cpp"
+    #include "split_tunnel_windows.cpp"
     #include "util/process.cpp"
 #elif defined(__APPLE__)
     #include "tun_device_macos.cpp"

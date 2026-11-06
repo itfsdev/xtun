@@ -21,6 +21,12 @@ enum libxtun_error {
     LIBXTUN_ERR_SYSTEM = -6,
     /* The host's DNS resolvers could not be configured. */
     LIBXTUN_ERR_DNS = -7,
+    /* Another owner is using the split-tunnel driver. */
+    LIBXTUN_ERR_SPLIT_BUSY = -8,
+    /* The operating system denied access to a resource. */
+    LIBXTUN_ERR_ACCESS_DENIED = -9,
+    /* The split-tunnel driver is missing, incompatible, or failed. */
+    LIBXTUN_ERR_SPLIT_DRIVER = -10,
 
     LIBXTUN_ERR_RESERVED_0 = -10000,
     LIBXTUN_ERR_RESERVED_1 = -10001,
