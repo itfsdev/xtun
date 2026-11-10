@@ -5,9 +5,10 @@
 #include "util/result.h"
 #include "xtun.h"
 
-#include <fwptypes.h>
-#include <fwpmu.h>
 #include <windows.h>
+
+#include <fwpmu.h>
+#include <fwptypes.h>
 
 #include <memory>
 #include <span>
@@ -24,6 +25,9 @@ namespace libxtun::wfp
         const wchar_t *sublayerDesc;
         UINT16 sublayerWeight;
         bool persistent;
+        // If true, create the sublayer and try to remove it during cleanup.
+        // If false, use the existing sublayer and leave it as is during cleanup.
+        bool ownsSublayer = true;
     };
 
     struct FilterInfo
@@ -66,12 +70,17 @@ namespace libxtun::wfp
         libxtun_error addSublayer() noexcept;
         libxtun_error addFilter(const GUID &layer, const FWP_ACTION_TYPE action, const UINT8 weight,
                                 std::span<FWPM_FILTER_CONDITION> conditions, const wchar_t *name) noexcept;
+        // Only return or delete filters that have provider's key.
         ResultXtun<std::vector<FilterInfo>> getInstalledFilters();
         libxtun_error deleteFilters();
+        libxtun_error deleteFilters(const GUID &sublayer);
         libxtun_error cleanup();
 
     private:
         explicit WfpEngine(const WfpConfig config) : m_config(config) {}
+
+        libxtun_error checkSublayer(bool allowMissing = false) noexcept;
+        ResultXtun<std::vector<FilterInfo>> getInstalledFilters(const GUID &sublayer);
 
         HANDLE m_engine = nullptr;
         WfpConfig m_config;

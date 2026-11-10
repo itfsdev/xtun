@@ -2,8 +2,8 @@
 #define LIBXTUN_KILLSWITCH_WINDOWS_H
 
 #include "killswitch.h"
-#include "xtun.h"
 #include "net/wfp.h"
+#include "xtun.h"
 
 #include <memory>
 #include <string>
@@ -21,16 +21,17 @@ namespace libxtun
     constexpr UINT8 WEIGHT_PASS_EXCLUDED = 4;
     constexpr UINT8 WEIGHT_BLOCK_PROTECTED = 0;
 
-    wfp::WfpConfig makeWfpConfig(bool persistent) noexcept;
+    wfp::WfpConfig makeWfpConfig(bool persistent, bool splitTunnel = false) noexcept;
 
     class WindowsKillswitch final : public Killswitch
     {
     public:
-        explicit WindowsKillswitch (libxtun_killswitch_mode mode, std::vector<net::IpAddress> dnsExceptions) noexcept
-            : Killswitch(mode, std::move(dnsExceptions))
+        explicit WindowsKillswitch(libxtun_killswitch_mode mode, std::vector<net::IpAddress> dnsExceptions,
+                                   bool splitTunnel = false) noexcept
+            : Killswitch(mode, std::move(dnsExceptions)), m_splitTunnel(splitTunnel)
         {
         }
-        ~WindowsKillswitch() override = default ;
+        ~WindowsKillswitch() override = default;
 
     protected:
         libxtun_error install(int ifIndex, const std::string &ifName) override;
@@ -56,6 +57,7 @@ namespace libxtun
                                std::uint64_t luidValue);
         libxtun_error blockDns(const GUID &layer) noexcept;
         std::unique_ptr<wfp::WfpEngine> m_wfp;
+        bool m_splitTunnel = false;
         std::uint64_t m_luid = 0;
     };
 }

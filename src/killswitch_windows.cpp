@@ -1,8 +1,10 @@
 #include "killswitch_windows.h"
-#include "xtun.h"
 #include "net/wfp.h"
+#include "split_tunnel_windows.h"
+#include "xtun.h"
 
 #include <ifdef.h>
+#include <iphlpapi.h>
 #include <netioapi.h>
 #include <winerror.h>
 
@@ -19,6 +21,22 @@ namespace libxtun
     {
         constexpr UINT16 DNS_PORT = 53;
         constexpr UINT16 DNS_TLS_PORT = 853;
+
+        libxtun_error cleanupWfp()
+        {
+            // Old HARD KillSwitch filters may remain in either sublayer.
+            // Do cleanup in both the regular (false) and driver (true) sublayers
+            for (const bool splitTunnel : { false, true }) {
+                auto engine = wfp::WfpEngine::open(makeWfpConfig(true, splitTunnel));
+                if (!engine) {
+                    return engine.error();
+                }
+                if (const auto error = engine.value()->cleanup(); error != LIBXTUN_OK) {
+                    return error;
+                }
+            }
+            return LIBXTUN_OK;
+        }
 
         FWP_V4_ADDR_AND_MASK v4AddrMask(const net::IpPrefix &prefix)
         {
@@ -58,15 +76,21 @@ namespace libxtun
         }
     }
 
-    wfp::WfpConfig makeWfpConfig(bool persistent) noexcept {
+    wfp::WfpConfig makeWfpConfig(bool persistent, bool splitTunnel) noexcept
+    {
         wfp::WfpConfig config {};
+        if (splitTunnel) {
+            config = split::baselineWfpConfig();
+            config.ownsSublayer = false;
+        } else {
+            config.sublayer = SUBLAYER_KEY;
+            config.sublayerName = L"xtun-killswitch-sublayer";
+            config.sublayerDesc = L"xtun Killswitch Sublayer";
+            config.sublayerWeight = SUBLAYER_WEIGHT;
+        }
         config.provider = PROVIDER_KEY;
         config.providerName = L"xtun-killswitch-provider";
         config.providerDesc = L"xtun Killswitch Provider";
-        config.sublayer = SUBLAYER_KEY;
-        config.sublayerName = L"xtun-killswitch-sublayer";
-        config.sublayerDesc = L"xtun Killswitch Sublayer";
-        config.sublayerWeight = SUBLAYER_WEIGHT;
         config.persistent = persistent;
         return config;
     }
@@ -83,16 +107,12 @@ namespace libxtun
         // filters installed by HARD mode cannot be removed from dynamic WFP session used by SOFT
         // thus, we have to use an engine with different config
         if (!persistent()) {
-            auto leftovers = wfp::WfpEngine::open(makeWfpConfig(true));
-            if (!leftovers) {
-                return leftovers.error();
-            }
-            if (const auto result = leftovers.value()->cleanup(); result != LIBXTUN_OK) {
+            if (const auto result = cleanupWfp(); result != LIBXTUN_OK) {
                 return result;
             }
         }
 
-        auto engine = wfp::WfpEngine::open(makeWfpConfig(persistent()));
+        auto engine = wfp::WfpEngine::open(makeWfpConfig(persistent(), m_splitTunnel));
         if (!engine) {
             return engine.error();
         }
@@ -120,13 +140,9 @@ namespace libxtun
         if (m_wfp != nullptr) {
             m_wfp->cleanup();
             m_wfp.reset();
-            return;
         }
 
-        auto engine = wfp::WfpEngine::open(makeWfpConfig(true));
-        if (engine) {
-            engine.value()->cleanup();
-        }
+        cleanupWfp();
     }
 
     libxtun_error WindowsKillswitch::installFilters(std::uint64_t luidValue, const std::vector<net::IpPrefix> &prefixes,
@@ -138,17 +154,21 @@ namespace libxtun
             return transaction.status();
         }
 
-        // cleanup any leftover filters possibly installed in HARD mode before installing new ones
-        // do it in one transaction to ensure no window without killswitch exists
-        if (const auto result = m_wfp->deleteFilters(); result != LIBXTUN_OK) {
-            return result;
-        }
-
         if (const auto result = m_wfp->addProvider(); result != LIBXTUN_OK) {
             return result;
         }
 
         if (const auto result = m_wfp->addSublayer(); result != LIBXTUN_OK) {
+            return result;
+        }
+
+        // Replace KillSwitch filters in both the regular and driver sublayers.
+        // If this transaction fails, the old filters stay.
+        if (const auto result = m_wfp->deleteFilters(); result != LIBXTUN_OK) {
+            return result;
+        }
+        const GUID otherSublayer = m_splitTunnel ? SUBLAYER_KEY : split::baselineWfpConfig().sublayer;
+        if (const auto result = m_wfp->deleteFilters(otherSublayer); result != LIBXTUN_OK) {
             return result;
         }
 

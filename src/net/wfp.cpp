@@ -78,12 +78,16 @@ namespace libxtun::wfp
         if (result != ERROR_SUCCESS) {
             return LIBXTUN_ERR_SYSTEM;
         }
-        
+
         return LIBXTUN_OK;
     }
 
     libxtun_error WfpEngine::addSublayer() noexcept
     {
+        if (!m_config.ownsSublayer) {
+            return LIBXTUN_OK;
+        }
+
         FWPM_SUBLAYER sublayer {};
         sublayer.subLayerKey = m_config.sublayer;
         sublayer.providerKey = &m_config.provider;
@@ -93,12 +97,32 @@ namespace libxtun::wfp
 
         const DWORD result = ::FwpmSubLayerAdd(m_engine, &sublayer, nullptr);
         if (result == FWP_E_ALREADY_EXISTS) {
-            return LIBXTUN_OK;
+            return checkSublayer();
         }
         if (result != ERROR_SUCCESS) {
             return LIBXTUN_ERR_SYSTEM;
         }
 
+        return LIBXTUN_OK;
+    }
+
+    libxtun_error WfpEngine::checkSublayer(bool allowMissing) noexcept
+    {
+        FWPM_SUBLAYER *rawSublayer = nullptr;
+        const DWORD result = ::FwpmSubLayerGetByKey(m_engine, &m_config.sublayer, &rawSublayer);
+        if (result == FWP_E_SUBLAYER_NOT_FOUND && allowMissing) {
+            return LIBXTUN_OK;
+        }
+        if (result != ERROR_SUCCESS) {
+            return LIBXTUN_ERR_SYSTEM;
+        }
+        const std::unique_ptr<FWPM_SUBLAYER, FwpmMemoryDeleter> sublayer(rawSublayer);
+
+        // Check only the owner. The weight is not compared: when the requested weight is taken,
+        // Windows stores another one, for example 0xFFFE instead of 0xFFFF.
+        if (!sublayer->providerKey || !::IsEqualGUID(*sublayer->providerKey, m_config.provider)) {
+            return LIBXTUN_ERR_SYSTEM;
+        }
         return LIBXTUN_OK;
     }
 
@@ -125,6 +149,11 @@ namespace libxtun::wfp
 
     ResultXtun<std::vector<FilterInfo>> WfpEngine::getInstalledFilters()
     {
+        return getInstalledFilters(m_config.sublayer);
+    }
+
+    ResultXtun<std::vector<FilterInfo>> WfpEngine::getInstalledFilters(const GUID &sublayer)
+    {
         HANDLE enumHandle = nullptr;
         if (::FwpmFilterCreateEnumHandle(m_engine, nullptr, &enumHandle) != ERROR_SUCCESS) {
             return fail(LIBXTUN_ERR_SYSTEM);
@@ -140,7 +169,8 @@ namespace libxtun::wfp
             }
             const std::unique_ptr<FWPM_FILTER *[], FwpmMemoryDeleter> entries(rawEntries);
             for (UINT32 at = 0; at < returned; ++at) {
-                if (::IsEqualGUID(entries[at]->subLayerKey, m_config.sublayer)) {
+                if (::IsEqualGUID(entries[at]->subLayerKey, sublayer) && entries[at]->providerKey
+                    && ::IsEqualGUID(*entries[at]->providerKey, m_config.provider)) {
                     filters.push_back({ entries[at]->filterId, entries[at]->layerKey, entries[at]->action.type });
                 }
             }
@@ -155,7 +185,12 @@ namespace libxtun::wfp
 
     libxtun_error WfpEngine::deleteFilters()
     {
-        const auto filters = getInstalledFilters();
+        return deleteFilters(m_config.sublayer);
+    }
+
+    libxtun_error WfpEngine::deleteFilters(const GUID &sublayer)
+    {
+        const auto filters = getInstalledFilters(sublayer);
         if (!filters) {
             return filters.error();
         }
@@ -175,15 +210,24 @@ namespace libxtun::wfp
         if (transaction.status() != LIBXTUN_OK) {
             return transaction.status();
         }
+        if (m_config.ownsSublayer) {
+            if (const auto result = checkSublayer(true); result != LIBXTUN_OK) {
+                return result;
+            }
+        }
         if (const auto result = deleteFilters(); result != LIBXTUN_OK) {
             return result;
         }
-        const DWORD sublayerResult = ::FwpmSubLayerDeleteByKey(m_engine, &m_config.sublayer);
-        if (sublayerResult != ERROR_SUCCESS && sublayerResult != FWP_E_SUBLAYER_NOT_FOUND) {
-            return LIBXTUN_ERR_SYSTEM;
+        if (m_config.ownsSublayer) {
+            const DWORD result = ::FwpmSubLayerDeleteByKey(m_engine, &m_config.sublayer);
+            // HARD filters or driver filters may still need this sublayer.
+            if (result != ERROR_SUCCESS && result != FWP_E_SUBLAYER_NOT_FOUND && result != FWP_E_IN_USE) {
+                return LIBXTUN_ERR_SYSTEM;
+            }
         }
         const DWORD providerResult = ::FwpmProviderDeleteByKey(m_engine, &m_config.provider);
-        if (providerResult != ERROR_SUCCESS && providerResult != FWP_E_PROVIDER_NOT_FOUND) {
+        if (providerResult != ERROR_SUCCESS && providerResult != FWP_E_PROVIDER_NOT_FOUND
+            && providerResult != FWP_E_IN_USE) {
             return LIBXTUN_ERR_SYSTEM;
         }
         return transaction.commit();
