@@ -12,10 +12,10 @@
     #include "net/wfp.cpp"
     #include "router_windows.cpp"
     #include "router_windows.h"
+    #include "split_tunnel_windows.cpp"
+    #include "split_tunnel_windows_data.cpp"
     #include "tun_device_windows.cpp"
     #include "tun_device_windows.h"
-    #include "split_tunnel_windows_data.cpp"
-    #include "split_tunnel_windows.cpp"
     #include "util/process.cpp"
 #elif defined(__APPLE__)
     #include "tun_device_macos.cpp"
@@ -95,20 +95,23 @@ namespace libxtun
     }
 
     std::unique_ptr<Killswitch> Killswitch::create(libxtun_killswitch_mode mode, int macosGroup,
-                                                   std::vector<net::IpAddress> dnsExceptions)
+                                                   std::vector<net::IpAddress> dnsExceptions, bool splitTunnel)
     {
 #if defined(__linux__) && !defined(__ANDROID__)
         (void)macosGroup;
+        (void)splitTunnel;
         return std::make_unique<LinuxKillswitch>(mode, std::move(dnsExceptions));
 #elif defined(__APPLE__) && TARGET_OS_OSX
+        (void)splitTunnel;
         return std::make_unique<MacosKillswitch>(mode, macosGroup, std::move(dnsExceptions));
 #elif defined(_WIN32)
         (void)macosGroup;
-        return std::make_unique<WindowsKillswitch>(mode, std::move(dnsExceptions));
+        return std::make_unique<WindowsKillswitch>(mode, std::move(dnsExceptions), splitTunnel);
 #else
         (void)mode;
         (void)macosGroup;
         (void)dnsExceptions;
+        (void)splitTunnel;
         return nullptr;
 #endif
     }

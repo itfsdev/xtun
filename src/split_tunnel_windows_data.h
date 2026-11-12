@@ -5,6 +5,9 @@
 
 #include <windows.h>
 
+#include <in6addr.h>
+#include <inaddr.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -35,6 +38,18 @@ namespace libxtun::split
         SIZE_T offset;
         USHORT bytes;
     };
+
+    // Address order from win-split-tunnel 1.2.5.0, src/ipaddr.h.
+    struct IpAddresses
+    {
+        IN_ADDR tunnelIpv4 {};
+        IN_ADDR internetIpv4 {};
+        IN6_ADDR tunnelIpv6 {};
+        IN6_ADDR internetIpv6 {};
+    };
+
+    static_assert(sizeof(IpAddresses) == 40 && offsetof(IpAddresses, tunnelIpv6) == 8
+                  && offsetof(IpAddresses, internetIpv6) == 24);
 
     static_assert(sizeof(wchar_t) == 2);
 #ifdef _WIN64

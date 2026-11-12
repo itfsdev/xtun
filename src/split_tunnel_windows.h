@@ -2,6 +2,7 @@
 #define LIBXTUN_SPLIT_TUNNEL_WINDOWS_H
 
 #include "net/wfp.h"
+#include "split_tunnel_windows_data.h"
 #include "util/noncopyable.h"
 #include "util/result.h"
 
@@ -12,6 +13,7 @@
 #include <memory>
 #include <mutex>
 #include <span>
+#include <string>
 
 namespace libxtun
 {
@@ -33,11 +35,24 @@ namespace libxtun
         };
 
         // Open the driver for one owner and prepare its WFP sublayers.
-        // Start the driver service if needed.
+        // Start the driver service if needed. Reset settings left by an owner that crashed.
         static ResultXtun<std::unique_ptr<WindowsSplitTunnel>> open();
         ~WindowsSplitTunnel();
 
         ResultXtun<State> state();
+
+        // Set the process list, current IP addresses, and native EXE paths.
+        // Remove the temporary block only after the driver is engaged.
+        libxtun_error activate(int ifIndex, std::span<const std::wstring> paths);
+
+        // Stop splitting and reset the driver. Keep the temporary block until
+        // Tunnel finishes removing routes and calls setTrafficBlocked(false).
+        libxtun_error deactivate();
+
+        // Send the current TUN addresses and the addresses of the physical Internet interface
+        // (IPv4 and IPv6) to the driver if they changed, for example after switching from Wi-Fi to Ethernet.
+        // An error keeps traffic blocked; the next network event retries the update.
+        libxtun_error updateAddresses();
 
         // Block connections for all apps while the driver settings are being changed.
         // Existing connections can also be blocked when WFP checks them again.
@@ -50,7 +65,15 @@ namespace libxtun
         // Check the owner and priority of existing sublayers.
         libxtun_error prepareDriverSublayers();
 
+        // Read the TUN addresses and the addresses of the current Internet interfaces.
+        static ResultXtun<split::IpAddresses> readAddresses(int ifIndex);
+        ResultXtun<State> stateLocked();
+        libxtun_error setTrafficBlockedLocked(bool blocked);
+        // Remove all driver settings and check that the driver is back in the Started state.
+        libxtun_error resetLocked();
+
         // Send a command to the driver, wait for it, and check the reply size.
+        // The caller holds m_mutex.
         libxtun_error control(DWORD code, std::span<const std::byte> input, std::span<std::byte> output);
 
         HANDLE m_driverOwnerMutex = nullptr;
@@ -58,6 +81,10 @@ namespace libxtun
         std::array<std::unique_ptr<wfp::WfpEngine>, 2> m_sharedWfpSessions;
         std::unique_ptr<wfp::WfpEngine> m_guardWfpSession;
         std::mutex m_mutex;
+        bool m_initialized = false;
+        int m_ifIndex = 0;
+        split::IpAddresses m_addresses;
+        bool m_addressesValid = false;
     };
 }
 

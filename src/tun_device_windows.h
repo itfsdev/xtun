@@ -44,6 +44,7 @@ namespace libxtun
         libxtun_error finishOpen();
 
         static void CALLBACK onRouteChangeCb(void *ctx, MIB_IPFORWARD_ROW2 *row, MIB_NOTIFICATION_TYPE type);
+        static void CALLBACK onAddressChangeCb(void *ctx, MIB_UNICASTIPADDRESS_ROW *row, MIB_NOTIFICATION_TYPE type);
 
         HMODULE m_wintun = nullptr;
         WINTUN_ADAPTER_HANDLE m_adapter = nullptr;
@@ -64,6 +65,7 @@ namespace libxtun
         WINTUN_SEND_PACKET_FUNC *m_sendPacket = nullptr;
         WINTUN_GET_ADAPTER_LUID_FUNC *m_getAdapterLuid = nullptr;
         HANDLE m_routeNotify = nullptr;
+        HANDLE m_addressNotify = nullptr;
         TunDeviceListener *m_listener = nullptr;
     };
 }

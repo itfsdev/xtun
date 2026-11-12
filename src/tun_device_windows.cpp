@@ -184,13 +184,20 @@ namespace libxtun
     {
         m_listener = &listener;
         NotifyRouteChange2(AF_UNSPEC, &WindowsTunDevice::onRouteChangeCb, this, FALSE, &m_routeNotify);
+        // An address can change without a route change, for example when a new IPv6 address becomes usable.
+        NotifyUnicastIpAddressChange(AF_UNSPEC, &WindowsTunDevice::onAddressChangeCb, this, FALSE, &m_addressNotify);
     }
 
     void WindowsTunDevice::stopMonitor() noexcept
     {
+        // Cancellation waits for callbacks. The listener's lock must stay free here.
         if (m_routeNotify != nullptr) {
             CancelMibChangeNotify2(m_routeNotify);
             m_routeNotify = nullptr;
+        }
+        if (m_addressNotify != nullptr) {
+            CancelMibChangeNotify2(m_addressNotify);
+            m_addressNotify = nullptr;
         }
         m_listener = nullptr;
     }
@@ -289,6 +296,16 @@ namespace libxtun
         auto *device = static_cast<WindowsTunDevice *>(ctx);
         if (device->m_listener != nullptr) {
             device->m_listener->onRouteChanged();
+        }
+    }
+
+    void CALLBACK WindowsTunDevice::onAddressChangeCb(void *ctx, MIB_UNICASTIPADDRESS_ROW *row, MIB_NOTIFICATION_TYPE type)
+    {
+        (void)row;
+        (void)type;
+        auto *device = static_cast<WindowsTunDevice *>(ctx);
+        if (device->m_listener != nullptr) {
+            device->m_listener->onAddressChanged();
         }
     }
 }

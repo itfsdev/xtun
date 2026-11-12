@@ -27,15 +27,20 @@ TEST(ContractTunnel, NewRejectsOutOfRangeKillswitch)
     libxtun_tunnel_free(&tun);
 }
 
-TEST(ContractTunnel, NewRejectsUnsupportedExcludedApps)
+TEST(ContractTunnel, NewRejectsExcludedAppsItCannotUse)
 {
-    const char *const excludedApps[] = { "C:\\Apps\\app.exe", nullptr };
+    const char *const excludedApps[] = { "C:\\xtun-missing-dir\\app.exe", nullptr };
     libxtun_tunnel_opts opts {};
     opts.size = sizeof(opts);
     opts.excluded_apps = excludedApps;
 
     libxtun_tunnel tun {};
+#if defined(_WIN32) && !defined(_M_ARM64EC) && (defined(_M_X64) || defined(__x86_64__))
+    // Paths are checked before the driver or the TUN is touched, so this needs no Administrator rights.
+    EXPECT_EQ(libxtun_tunnel_new(&tun, &opts), LIBXTUN_ERR_INVALID_ARGS);
+#else
     EXPECT_EQ(libxtun_tunnel_new(&tun, &opts), LIBXTUN_ERR_UNSUPPORTED);
+#endif
     EXPECT_EQ(tun.handle, nullptr);
     libxtun_tunnel_free(&tun);
 }

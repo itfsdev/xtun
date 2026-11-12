@@ -19,6 +19,8 @@ namespace libxtun
         virtual void onLinkStateChanged(bool up) = 0;
         virtual void onMtuChanged(int mtu) = 0;
         virtual void onRouteChanged() = 0;
+        // A local IP address was added, removed, or became usable. Only Windows reports it.
+        virtual void onAddressChanged() = 0;
     };
 
     class TunDevice

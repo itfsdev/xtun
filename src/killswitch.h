@@ -23,7 +23,8 @@ namespace libxtun
                               const std::vector<net::IpAddress> &resolvers);
 
         static std::unique_ptr<Killswitch> create(libxtun_killswitch_mode mode, int macosGroup = -1,
-                                                  std::vector<net::IpAddress> dnsExceptions = {});
+                                                  std::vector<net::IpAddress> dnsExceptions = {},
+                                                  bool splitTunnel = false);
 
     protected:
         Killswitch(libxtun_killswitch_mode mode, std::vector<net::IpAddress> dnsExceptions) noexcept

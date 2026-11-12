@@ -1,9 +1,11 @@
 #include "split_tunnel_windows.h"
+#include "net/uplink_windows.h"
 
 #include <winioctl.h>
 #include <winsvc.h>
 
 #include <array>
+#include <cstring>
 #include <limits>
 #include <utility>
 
@@ -46,7 +48,13 @@ namespace libxtun
             return config;
         }
 
+        // Commands from win-split-tunnel 1.2.5.0, src/defs/ioctl.h.
+        constexpr DWORD INITIALIZE_SPLIT = CTL_CODE(0x8000, 1, METHOD_NEITHER, FILE_ANY_ACCESS);
+        constexpr DWORD REGISTER_SPLIT_PROCESSES = CTL_CODE(0x8000, 3, METHOD_BUFFERED, FILE_ANY_ACCESS);
+        constexpr DWORD REGISTER_SPLIT_IP_ADDRESSES = CTL_CODE(0x8000, 4, METHOD_BUFFERED, FILE_ANY_ACCESS);
+        constexpr DWORD SET_SPLIT_CONFIGURATION = CTL_CODE(0x8000, 6, METHOD_BUFFERED, FILE_ANY_ACCESS);
         constexpr DWORD GET_SPLIT_STATE = CTL_CODE(0x8000, 9, METHOD_BUFFERED, FILE_ANY_ACCESS);
+        constexpr DWORD RESET_SPLIT = CTL_CODE(0x8000, 11, METHOD_NEITHER, FILE_ANY_ACCESS);
 
         struct ServiceCloser
         {
@@ -58,6 +66,16 @@ namespace libxtun
             }
         };
         using Service = std::unique_ptr<void, ServiceCloser>;
+
+        // Copy an address to a driver field, for example IN_ADDR for IPv4.
+        // An empty address leaves the field all zeros: the driver does not split that address family.
+        template<typename T> void copyAddress(T &field, const net::IpAddress &address) noexcept
+        {
+            const auto bytes = address.octets();
+            if (bytes.size() == sizeof(field)) {
+                std::memcpy(&field, bytes.data(), sizeof(field));
+            }
+        }
 
         libxtun_error splitError(DWORD error)
         {
@@ -165,7 +183,12 @@ namespace libxtun
             return fail(LIBXTUN_ERR_SPLIT_DRIVER);
         }
         if (state.value() != State::Started) {
-            return fail(LIBXTUN_ERR_SPLIT_BUSY);
+            // The driver does not reset itself when its handle is closed, and only one handle can be open.
+            // So other states are left by an owner that crashed: remove its exclusions.
+            std::lock_guard<std::mutex> lock(component->m_mutex);
+            if (const auto error = component->resetLocked(); error != LIBXTUN_OK) {
+                return fail(error);
+            }
         }
         if (const auto error = component->prepareDriverSublayers(); error != LIBXTUN_OK) {
             return fail(error);
@@ -176,7 +199,11 @@ namespace libxtun
 
     WindowsSplitTunnel::~WindowsSplitTunnel()
     {
+        std::lock_guard<std::mutex> lock(m_mutex);
         if (m_device != INVALID_HANDLE_VALUE) {
+            if (m_initialized) {
+                control(RESET_SPLIT, {}, {});
+            }
             ::CloseHandle(m_device);
         }
         for (auto &engine : m_sharedWfpSessions) {
@@ -219,9 +246,177 @@ namespace libxtun
         return LIBXTUN_OK;
     }
 
+    ResultXtun<split::IpAddresses> WindowsSplitTunnel::readAddresses(int ifIndex)
+    {
+        if (ifIndex <= 0) {
+            return fail(LIBXTUN_ERR_INVALID_ARGS);
+        }
+        const auto tunnelIpv4 = net::interfaceAddress(AF_INET, ifIndex);
+        if (!tunnelIpv4) {
+            return fail(tunnelIpv4.error());
+        }
+        const auto tunnelIpv6 = net::interfaceAddress(AF_INET6, ifIndex);
+        if (!tunnelIpv6) {
+            return fail(tunnelIpv6.error());
+        }
+        // Without any tunnel address the driver would turn splitting off.
+        if (!tunnelIpv4.value().valid() && !tunnelIpv6.value().valid()) {
+            return fail(LIBXTUN_ERR_SYSTEM);
+        }
+        const auto internetIpv4 = net::defaultUplink(AF_INET, ifIndex);
+        if (!internetIpv4) {
+            return fail(internetIpv4.error());
+        }
+        const auto internetIpv6 = net::defaultUplink(AF_INET6, ifIndex);
+        if (!internetIpv6) {
+            return fail(internetIpv6.error());
+        }
+
+        split::IpAddresses addresses;
+        copyAddress(addresses.tunnelIpv4, tunnelIpv4.value());
+        copyAddress(addresses.tunnelIpv6, tunnelIpv6.value());
+        copyAddress(addresses.internetIpv4, internetIpv4.value().address);
+        copyAddress(addresses.internetIpv6, internetIpv6.value().address);
+        return addresses;
+    }
+
+    libxtun_error WindowsSplitTunnel::activate(int ifIndex, std::span<const std::wstring> paths)
+    {
+        auto apps = split::packApps(paths);
+        if (!apps) {
+            return apps.error();
+        }
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (m_initialized) {
+            return LIBXTUN_ERR_SPLIT_BUSY;
+        }
+        if (const auto error = setTrafficBlockedLocked(true); error != LIBXTUN_OK) {
+            return error;
+        }
+        // A failed command may still leave driver resources to reset.
+        m_initialized = true;
+        if (const auto error = control(INITIALIZE_SPLIT, {}, {}); error != LIBXTUN_OK) {
+            return error;
+        }
+        const auto processes = split::snapshotProcesses();
+        if (!processes) {
+            return processes.error();
+        }
+        const auto processBuffer = split::packProcesses(processes.value());
+        if (!processBuffer) {
+            return processBuffer.error();
+        }
+        if (const auto error = control(REGISTER_SPLIT_PROCESSES, processBuffer.value(), {}); error != LIBXTUN_OK) {
+            return error;
+        }
+        const auto addresses = readAddresses(ifIndex);
+        if (!addresses) {
+            return addresses.error();
+        }
+        if (const auto error = control(REGISTER_SPLIT_IP_ADDRESSES, std::as_bytes(std::span(&addresses.value(), 1)), {});
+            error != LIBXTUN_OK) {
+            return error;
+        }
+        if (const auto error = control(SET_SPLIT_CONFIGURATION, apps.value(), {}); error != LIBXTUN_OK) {
+            return error;
+        }
+        const auto current = stateLocked();
+        if (!current) {
+            return current.error();
+        }
+        if (current.value() != State::Engaged) {
+            return LIBXTUN_ERR_SPLIT_DRIVER;
+        }
+        if (const auto error = setTrafficBlockedLocked(false); error != LIBXTUN_OK) {
+            return error;
+        }
+        m_ifIndex = ifIndex;
+        m_addresses = addresses.value();
+        m_addressesValid = true;
+        return LIBXTUN_OK;
+    }
+
+    libxtun_error WindowsSplitTunnel::deactivate()
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_ifIndex = 0;
+        m_addressesValid = false;
+        if (!m_initialized) {
+            return LIBXTUN_OK;
+        }
+        const auto blockError = setTrafficBlockedLocked(true);
+        if (const auto error = resetLocked(); error != LIBXTUN_OK) {
+            return error;
+        }
+        return blockError;
+    }
+
+    libxtun_error WindowsSplitTunnel::resetLocked()
+    {
+        if (const auto error = control(RESET_SPLIT, {}, {}); error != LIBXTUN_OK) {
+            return error;
+        }
+        const auto current = stateLocked();
+        if (!current) {
+            return current.error();
+        }
+        if (current.value() != State::Started) {
+            return LIBXTUN_ERR_SPLIT_DRIVER;
+        }
+        m_initialized = false;
+        return LIBXTUN_OK;
+    }
+
+    libxtun_error WindowsSplitTunnel::updateAddresses()
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (m_ifIndex == 0) {
+            return LIBXTUN_OK;
+        }
+        const auto addresses = readAddresses(m_ifIndex);
+        if (!addresses) {
+            m_addressesValid = false;
+            if (const auto error = setTrafficBlockedLocked(true); error != LIBXTUN_OK) {
+                return error;
+            }
+            return addresses.error();
+        }
+        if (m_addressesValid && std::memcmp(&addresses.value(), &m_addresses, sizeof(m_addresses)) == 0) {
+            return LIBXTUN_OK;
+        }
+        // Save the new addresses only after every step succeeds, so the next event retries after an error.
+        // For example, the driver rejects the addresses while no Internet interface exists.
+        m_addressesValid = false;
+        if (const auto error = setTrafficBlockedLocked(true); error != LIBXTUN_OK) {
+            return error;
+        }
+        if (const auto error = control(REGISTER_SPLIT_IP_ADDRESSES, std::as_bytes(std::span(&addresses.value(), 1)), {});
+            error != LIBXTUN_OK) {
+            return error;
+        }
+        const auto current = stateLocked();
+        if (!current) {
+            return current.error();
+        }
+        if (current.value() != State::Engaged) {
+            return LIBXTUN_ERR_SPLIT_DRIVER;
+        }
+        if (const auto error = setTrafficBlockedLocked(false); error != LIBXTUN_OK) {
+            return error;
+        }
+        m_addresses = addresses.value();
+        m_addressesValid = true;
+        return LIBXTUN_OK;
+    }
+
     libxtun_error WindowsSplitTunnel::setTrafficBlocked(bool blocked)
     {
         std::lock_guard<std::mutex> lock(m_mutex);
+        return setTrafficBlockedLocked(blocked);
+    }
+
+    libxtun_error WindowsSplitTunnel::setTrafficBlockedLocked(bool blocked)
+    {
         if (!blocked) {
             if (!m_guardWfpSession) {
                 return LIBXTUN_OK;
@@ -283,7 +478,6 @@ namespace libxtun
         if (input.size() > std::numeric_limits<DWORD>::max() || output.size() > std::numeric_limits<DWORD>::max()) {
             return LIBXTUN_ERR_INVALID_ARGS;
         }
-        std::lock_guard<std::mutex> lock(m_mutex);
         DWORD bytes = 0;
         if (!::DeviceIoControl(m_device, code, const_cast<std::byte *>(input.data()), static_cast<DWORD>(input.size()),
                                output.data(), static_cast<DWORD>(output.size()), &bytes, nullptr)) {
@@ -293,6 +487,12 @@ namespace libxtun
     }
 
     ResultXtun<WindowsSplitTunnel::State> WindowsSplitTunnel::state()
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        return stateLocked();
+    }
+
+    ResultXtun<WindowsSplitTunnel::State> WindowsSplitTunnel::stateLocked()
     {
         // The driver writes SIZE_T: 8 bytes on Windows x64. A smaller buffer fails the request.
         SIZE_T value = 0;
