@@ -32,7 +32,18 @@ if(WIN32)
                 "$<TARGET_PROPERTY:amnezia::wintun,INTERFACE_INCLUDE_DIRECTORIES>/../bin/wintun.dll"
                 $<TARGET_FILE_DIR:xtun_tests>
         COMMAND_EXPAND_LISTS)
+
+    find_package(win-split-tunnel QUIET)
+    if(win-split-tunnel_FOUND)
+        add_test(NAME install_split_driver
+                 COMMAND powershell -NoProfile -ExecutionPolicy Bypass
+                         -File "${CMAKE_CURRENT_SOURCE_DIR}/install-split-driver.ps1" -Source "${WIN_SPLIT_TUNNEL_BIN}")
+        set_tests_properties(install_split_driver PROPERTIES FIXTURES_SETUP SplitDriver SKIP_RETURN_CODE 77)
+    endif()
 endif()
 
 gtest_discover_tests(xtun_tests TEST_FILTER "Killswitch*:Dns*:Routing*" PROPERTIES TIMEOUT 30 RUN_SERIAL TRUE)
-gtest_discover_tests(xtun_tests TEST_FILTER "-Killswitch*:Dns*:Routing*" PROPERTIES TIMEOUT 30)
+# These tests own the driver while they run, so they must not run in parallel with other tests.
+gtest_discover_tests(xtun_tests TEST_FILTER "SplitTunnelDriver*"
+                     PROPERTIES TIMEOUT 30 RUN_SERIAL TRUE FIXTURES_REQUIRED SplitDriver)
+gtest_discover_tests(xtun_tests TEST_FILTER "-Killswitch*:Dns*:Routing*:SplitTunnelDriver*" PROPERTIES TIMEOUT 30)
