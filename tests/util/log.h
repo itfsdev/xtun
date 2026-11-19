@@ -48,6 +48,8 @@ namespace libxtun::test
             } else {
                 printf("%s\n", message);
             }
+            // Call fflush() so that the full log can be read when a test crashes or hangs in CI.
+            fflush(stdout);
         }
 
     private:
