@@ -2,6 +2,7 @@
 #include "split_tunnel_windows_data.h"
 #include "util/os.h"
 #include "util/random.h"
+#include "util/split_driver_windows.h"
 
 #include <gtest/gtest.h>
 
@@ -102,31 +103,8 @@ TEST(SplitTunnelOwnership, RejectsSecondOwnerAndClosesItsHandle)
 
 TEST(SplitTunnelDriver, OpenReadsStartedState)
 {
-#if defined(_M_ARM64EC) || (!defined(_M_X64) && !defined(__x86_64__))
-    GTEST_SKIP() << "Split tunneling requires Windows x64";
-#else
-    if (!test::privileged()) {
-        GTEST_SKIP() << "The driver requires Administrator";
-    }
-
-    // Run only where the installer registered the driver service.
-    SC_HANDLE manager = ::OpenSCManagerW(nullptr, nullptr, SC_MANAGER_CONNECT);
-    ASSERT_NE(manager, nullptr) << ::GetLastError();
-    SC_HANDLE service = ::OpenServiceW(manager, L"XtunSplitTunnel", SERVICE_QUERY_STATUS);
-    const DWORD serviceError = ::GetLastError();
-    if (service != nullptr) {
-        ::CloseServiceHandle(service);
-    }
-    ::CloseServiceHandle(manager);
-    if (service == nullptr && serviceError == ERROR_SERVICE_DOES_NOT_EXIST) {
-        GTEST_SKIP() << "XtunSplitTunnel service is not installed";
-    }
-    ASSERT_NE(service, nullptr) << serviceError;
-
-    // Another xtun process may use the driver right now.
-    if (HANDLE owner = ::OpenMutexW(SYNCHRONIZE, FALSE, L"Global\\XtunSplitTunnel")) {
-        ::CloseHandle(owner);
-        GTEST_SKIP() << "Another process owns the driver";
+    if (const std::string reason = test::splitDriverSkipReason(); !reason.empty()) {
+        GTEST_SKIP() << reason;
     }
 
     const auto component = WindowsSplitTunnel::open();
@@ -134,7 +112,6 @@ TEST(SplitTunnelDriver, OpenReadsStartedState)
     const auto state = component.value()->state();
     ASSERT_TRUE(state) << libxtun_strerror(state.error());
     EXPECT_EQ(state.value(), WindowsSplitTunnel::State::Started);
-#endif
 }
 
 TEST(SplitTunnelData, Utf8IsStrictAndPreservesUnicode)

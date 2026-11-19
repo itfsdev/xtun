@@ -236,12 +236,18 @@ namespace libxtun::test
             m_opts.health_seconds = healthSeconds;
             return *this;
         }
+        TunOpts &excludedApps(std::vector<std::string> excludedApps)
+        {
+            m_excludedApps = excludedApps;
+            return *this;
+        }
 
         const libxtun_tunnel_opts &get()
         {
             m_opts.dns = toPtrs(m_dns, m_dnsPtrs);
             m_opts.dns_exceptions = toPtrs(m_dnsExceptions, m_dnsExceptionsPtrs);
             m_opts.if_addrs = toPtrs(m_ifaddrs, m_ifaddrsPtrs);
+            m_opts.excluded_apps = toPtrs(m_excludedApps, m_excludedAppsPtrs);
             return m_opts;
         }
 
@@ -261,7 +267,8 @@ namespace libxtun::test
         std::vector<std::string> m_dns;
         std::vector<std::string> m_dnsExceptions;
         std::vector<std::string> m_ifaddrs = { DEFAULT_IFADDR };
-        std::vector<const char *> m_dnsPtrs, m_dnsExceptionsPtrs, m_ifaddrsPtrs;
+        std::vector<std::string> m_excludedApps;
+        std::vector<const char *> m_dnsPtrs, m_dnsExceptionsPtrs, m_ifaddrsPtrs, m_excludedAppsPtrs;
     };
 
     static std::vector<libxtun_proxy_proto> allProtos()

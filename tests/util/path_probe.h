@@ -3,6 +3,7 @@
 
 #include "config.h"
 #include "os.h"
+#include "probe_codes.h"
 #include "util/noncopyable.h"
 #include "xtun.h"
 
@@ -32,8 +33,6 @@ namespace libxtun::test
 #else
     constexpr auto UDP_REJECTION_WAIT = std::chrono::milliseconds(0);
 #endif
-    constexpr int CONNECTED_VIA_TUNNEL = 200;
-    constexpr int CONNECTED_ELSEWHERE = 201;
 #if defined(__APPLE__)
     constexpr ::gid_t FOREIGN_GID = 1;
 #endif

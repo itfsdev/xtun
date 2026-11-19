@@ -55,13 +55,17 @@ namespace libxtun::test
 
         void cleanup()
         {
-            auto engine = wfp::WfpEngine::open(makeWfpConfig(true));
-            if (!engine) {
-                ADD_FAILURE() << "could not open a WFP session to clean up the killswitch";
-                return;
-            }
-            if (const libxtun_error rc = engine.value()->cleanup(); rc != LIBXTUN_OK) {
-                ADD_FAILURE() << "could not remove the killswitch's WFP objects: " << rc;
+            // HARD filters stay after the tunnel is freed. With excluded apps they are in the driver's sublayer,
+            // so clean both the regular (false) and the driver's (true) sublayer.
+            for (const bool splitTunnel : { false, true }) {
+                auto engine = wfp::WfpEngine::open(makeWfpConfig(true, splitTunnel));
+                if (!engine) {
+                    ADD_FAILURE() << "could not open a WFP session to clean up the killswitch";
+                    return;
+                }
+                if (const libxtun_error rc = engine.value()->cleanup(); rc != LIBXTUN_OK) {
+                    ADD_FAILURE() << "could not remove the killswitch's WFP objects: " << rc;
+                }
             }
         }
     }
