@@ -88,7 +88,10 @@ namespace libxtun::split
             return fail(decoded.error());
         }
         auto path = std::move(decoded).value();
-        std::replace(path.begin(), path.end(), L'/', L'\\');
+        // Remove "." and resolve ".." directories.
+        // Example: "C:\Apps\.\old\..\app.exe" becomes "C:\Apps\app.exe".
+        // Do this before adding \\?\, which disables normal Windows path cleanup.
+        path = std::filesystem::path(path).lexically_normal().native();
 
         // Require an absolute path such as C:\Apps\app.exe.
         // Reject network paths such as \\server\share\app.exe and device paths.
@@ -116,10 +119,7 @@ namespace libxtun::split
             return fail(LIBXTUN_ERR_INVALID_ARGS);
         }
 
-        // Remove "." and resolve ".." directories.
-        // Example: "C:\Apps\.\old\..\app.exe" becomes "C:\Apps\app.exe".
-        // Do this before adding \\?\, which disables normal Windows path cleanup.
-        const std::wstring fullPath = L"\\\\?\\" + std::filesystem::path(path).lexically_normal().native();
+        const std::wstring fullPath = L"\\\\?\\" + path;
         Handle file { ::CreateFileW(fullPath.c_str(), FILE_READ_ATTRIBUTES,
                                     FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
                                     FILE_ATTRIBUTE_NORMAL, nullptr) };
