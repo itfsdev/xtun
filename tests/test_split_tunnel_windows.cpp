@@ -87,7 +87,7 @@ TEST(SplitTunnelOwnership, RejectsSecondOwnerAndClosesItsHandle)
         GTEST_SKIP() << "Another process already owns the driver marker";
     }
 
-    const auto secondOwner = libxtun::WindowsSplitTunnel::open();
+    const auto secondOwner = libxtun::WindowsSplitTunnel::open({});
     ASSERT_FALSE(secondOwner);
     EXPECT_EQ(secondOwner.error(), LIBXTUN_ERR_SPLIT_BUSY);
 
@@ -107,7 +107,7 @@ TEST(SplitTunnelDriver, OpenReadsStartedState)
         GTEST_SKIP() << reason;
     }
 
-    const auto component = WindowsSplitTunnel::open();
+    const auto component = WindowsSplitTunnel::open({});
     ASSERT_TRUE(component) << libxtun_strerror(component.error());
     const auto state = component.value()->state();
     ASSERT_TRUE(state) << libxtun_strerror(state.error());

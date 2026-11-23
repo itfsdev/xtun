@@ -121,12 +121,10 @@ namespace libxtun
         return config;
     }
 
-    ResultXtun<std::unique_ptr<WindowsSplitTunnel>> WindowsSplitTunnel::open()
+    ResultXtun<std::unique_ptr<WindowsSplitTunnel>> WindowsSplitTunnel::open(std::vector<std::wstring> paths)
     {
-#if defined(_M_ARM64EC) || (!defined(_M_X64) && !defined(__x86_64__))
-        return fail(LIBXTUN_ERR_UNSUPPORTED);
-#else
         auto component = std::unique_ptr<WindowsSplitTunnel>(new WindowsSplitTunnel);
+        component->m_paths = std::move(paths);
         // Keep this named object alive to block a second owner.
         // Do not lock it: another thread may destroy this component.
         component->m_driverOwnerMutex = ::CreateMutexW(nullptr, FALSE, L"Global\\XtunSplitTunnel");
@@ -194,7 +192,6 @@ namespace libxtun
             return fail(error);
         }
         return component;
-#endif
     }
 
     WindowsSplitTunnel::~WindowsSplitTunnel()
@@ -280,9 +277,9 @@ namespace libxtun
         return addresses;
     }
 
-    libxtun_error WindowsSplitTunnel::activate(int ifIndex, std::span<const std::wstring> paths)
+    libxtun_error WindowsSplitTunnel::activate(int ifIndex)
     {
-        auto apps = split::packApps(paths);
+        auto apps = split::packApps(m_paths);
         if (!apps) {
             return apps.error();
         }

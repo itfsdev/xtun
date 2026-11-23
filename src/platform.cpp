@@ -1,3 +1,4 @@
+#include "app_split_tunnel.h"
 #include "dns.h"
 #include "killswitch.h"
 #include "router.h"
@@ -113,6 +114,46 @@ namespace libxtun
         (void)dnsExceptions;
         (void)splitTunnel;
         return nullptr;
+#endif
+    }
+
+    namespace
+    {
+        class NoAppSplitTunnel final : public AppSplitTunnel
+        {
+        public:
+            libxtun_error activate(int) override
+            {
+                return LIBXTUN_OK;
+            }
+            libxtun_error deactivate() override
+            {
+                return LIBXTUN_OK;
+            }
+            libxtun_error updateAddresses() override
+            {
+                return LIBXTUN_OK;
+            }
+            libxtun_error setTrafficBlocked(bool) override
+            {
+                return LIBXTUN_OK;
+            }
+        };
+    }
+
+    ResultXtun<std::unique_ptr<AppSplitTunnel>> AppSplitTunnel::create(const char *const *apps)
+    {
+        if (apps == nullptr || *apps == nullptr) {
+            return std::unique_ptr<AppSplitTunnel>(std::make_unique<NoAppSplitTunnel>());
+        }
+#if defined(_WIN32) && !defined(_M_ARM64EC) && (defined(_M_X64) || defined(__x86_64__))
+        auto paths = split::executablePaths(apps);
+        if (!paths) {
+            return fail(paths.error());
+        }
+        return WindowsSplitTunnel::open(std::move(paths).value());
+#else
+        return fail(LIBXTUN_ERR_UNSUPPORTED);
 #endif
     }
 

@@ -1,6 +1,7 @@
 #ifndef LIBXTUN_TUNNEL_H
 #define LIBXTUN_TUNNEL_H
 
+#include "app_split_tunnel.h"
 #include "dns.h"
 #include "killswitch.h"
 #include "net/ip.h"
@@ -21,10 +22,6 @@
 
 namespace libxtun
 {
-#if defined(_WIN32)
-    class WindowsSplitTunnel;
-#endif
-
     class Tunnel : public TunnelIo, public TunDeviceListener, public RouterListener
     {
     public:
@@ -80,13 +77,10 @@ namespace libxtun
         std::unique_ptr<TunDevice> m_device;
         std::unique_ptr<Router> m_router;
         std::unique_ptr<Dns> m_dns;
-#if defined(_WIN32)
         // Declared before m_killswitch, so it is destroyed after it: KillSwitch filters
         // must leave the driver's WFP sublayer before this object removes the sublayer.
         // It is set before the network monitor starts, so callbacks may read it without m_mutex.
-        std::unique_ptr<WindowsSplitTunnel> m_splitTunnel;
-        std::vector<std::wstring> m_excludedApps;
-#endif
+        std::unique_ptr<AppSplitTunnel> m_splitTunnel;
         std::unique_ptr<Killswitch> m_killswitch;
 
         std::mutex m_mutex;
