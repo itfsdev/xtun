@@ -236,9 +236,10 @@ namespace libxtun::test
             m_opts.health_seconds = healthSeconds;
             return *this;
         }
-        TunOpts &excludedApps(std::vector<std::string> excludedApps)
+        TunOpts &excludedApps(std::vector<std::string> excludedApps, std::string serviceName)
         {
             m_excludedApps = excludedApps;
+            m_splitServiceName = serviceName;
             return *this;
         }
 
@@ -248,6 +249,7 @@ namespace libxtun::test
             m_opts.dns_exceptions = toPtrs(m_dnsExceptions, m_dnsExceptionsPtrs);
             m_opts.if_addrs = toPtrs(m_ifaddrs, m_ifaddrsPtrs);
             m_opts.excluded_apps = toPtrs(m_excludedApps, m_excludedAppsPtrs);
+            m_opts.split_service_name = m_splitServiceName.c_str();
             return m_opts;
         }
 
@@ -268,6 +270,7 @@ namespace libxtun::test
         std::vector<std::string> m_dnsExceptions;
         std::vector<std::string> m_ifaddrs = { DEFAULT_IFADDR };
         std::vector<std::string> m_excludedApps;
+        std::string m_splitServiceName;
         std::vector<const char *> m_dnsPtrs, m_dnsExceptionsPtrs, m_ifaddrsPtrs, m_excludedAppsPtrs;
     };
 

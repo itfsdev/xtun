@@ -12,6 +12,8 @@
 
 namespace libxtun::test
 {
+    constexpr const char *SPLIT_SERVICE_NAME = "XtunSplitTunnel";
+
     // Return why the tests cannot use the split tunnel driver here, or an empty string.
     // An unexpected error of the service manager also fails the test.
     inline std::string splitDriverSkipReason()
@@ -29,7 +31,7 @@ namespace libxtun::test
             ADD_FAILURE() << "OpenSCManager failed: " << ::GetLastError();
             return "No access to the service manager";
         }
-        SC_HANDLE service = ::OpenServiceW(manager, L"XtunSplitTunnel", SERVICE_QUERY_STATUS);
+        SC_HANDLE service = ::OpenServiceA(manager, SPLIT_SERVICE_NAME, SERVICE_QUERY_STATUS);
         const DWORD serviceError = ::GetLastError();
         if (service != nullptr) {
             ::CloseServiceHandle(service);
@@ -39,7 +41,7 @@ namespace libxtun::test
             if (serviceError != ERROR_SERVICE_DOES_NOT_EXIST) {
                 ADD_FAILURE() << "OpenService failed: " << serviceError;
             }
-            return "XtunSplitTunnel service is not installed";
+            return std::string(SPLIT_SERVICE_NAME) + " service is not installed";
         }
 
         // Another xtun process may use the driver right now.

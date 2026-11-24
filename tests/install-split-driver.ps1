@@ -26,7 +26,6 @@ if (-not (Get-Service -Name $service -ErrorAction SilentlyContinue)) {
     foreach ($extension in "sys", "cat", "inf") {
         Copy-Item -LiteralPath (Join-Path $Source "mullvad-split-tunnel.$extension") -Destination $Directory -Force
     }
-    # The same settings that WindowsSplitTunnel::open() checks: kernel driver, started on demand.
     & sc.exe create $service type= kernel start= demand binPath= (Join-Path $Directory "mullvad-split-tunnel.sys")
     if ($LASTEXITCODE -ne 0) { throw "sc.exe create failed: $LASTEXITCODE" }
 }

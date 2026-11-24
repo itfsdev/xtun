@@ -37,8 +37,6 @@ namespace libxtun
 
     ResultXtun<std::unique_ptr<Tunnel>> Tunnel::fromOpts(const libxtun_tunnel_opts &opts)
     {
-        const bool splitTunnel = opts.excluded_apps != nullptr && *opts.excluded_apps != nullptr;
-
         auto dnsDefaults = cinterop::parseListT<net::IpAddress>(opts.dns);
         if (!dnsDefaults) {
             return fail(dnsDefaults.error());
@@ -47,7 +45,7 @@ namespace libxtun
         if (!dnsExceptions) {
             return fail(dnsExceptions.error());
         }
-        auto appSplitTunnel = AppSplitTunnel::create(opts.excluded_apps);
+        auto appSplitTunnel = AppSplitTunnel::create(opts.excluded_apps, opts.split_service_name);
         if (!appSplitTunnel) {
             return fail(appSplitTunnel.error());
         }
@@ -59,7 +57,7 @@ namespace libxtun
         tun->m_splitTunnel = std::move(appSplitTunnel).value();
         // With exclusions, KillSwitch puts its filters into the driver's WFP sublayer.
         tun->m_killswitch = Killswitch::create(opts.killswitch_mode, opts.macos_group, std::move(dnsExceptions).value(),
-                                               splitTunnel);
+                                               tun->m_splitTunnel != nullptr);
 
         auto &dev = tun->m_device;
         auto &router = tun->m_router;
@@ -106,7 +104,6 @@ namespace libxtun
 
         auto tun = std::unique_ptr<Tunnel>(new Tunnel());
         tun->m_tunfactory = tunfactory;
-        tun->m_splitTunnel = AppSplitTunnel::create(nullptr).value();
         tun->m_addrs = std::move(ifaddrs);
         tun->m_dnsDefaults = std::move(defaultDns);
         return tun;
@@ -123,20 +120,24 @@ namespace libxtun
         // Every failure below restores the old routes and KillSwitch rules,
         // then removes the temporary block of all apps.
         const auto failed = [this](int error) -> int {
-            if (const auto unblockError = m_splitTunnel->setTrafficBlocked(false); unblockError != LIBXTUN_OK) {
-                return unblockError;
+            if (m_splitTunnel) {
+                if (const auto unblockError = m_splitTunnel->setTrafficBlocked(false); unblockError != LIBXTUN_OK) {
+                    return unblockError;
+                }
             }
             return error;
         };
 
-        // Remove the old exclusions and block all apps until the new ones are set.
-        // Otherwise excluded apps could briefly go through the new VPN routes.
-        // If this fails, everything stays blocked: the driver state is unknown.
-        if (const auto error = m_splitTunnel->deactivate(); error != LIBXTUN_OK) {
-            return error;
-        }
-        if (const auto error = m_splitTunnel->setTrafficBlocked(true); error != LIBXTUN_OK) {
-            return error;
+        if (m_splitTunnel) {
+            // Remove the old exclusions and block all apps until the new ones are set.
+            // Otherwise excluded apps could briefly go through the new VPN routes.
+            // If this fails, everything stays blocked: the driver state is unknown.
+            if (const auto error = m_splitTunnel->deactivate(); error != LIBXTUN_OK) {
+                return error;
+            }
+            if (const auto error = m_splitTunnel->setTrafficBlocked(true); error != LIBXTUN_OK) {
+                return error;
+            }
         }
 
         ProxyProfile profile = proxy->profile();
@@ -205,18 +206,20 @@ namespace libxtun
             }
         }
 
-        // On success the driver is engaged and the temporary block is removed.
-        if (const auto error = m_splitTunnel->activate(m_device->ifIndex()); error != LIBXTUN_OK) {
-            if (m_dns != nullptr) {
-                m_dns->revert();
+        if (m_splitTunnel) {
+            // On success the driver is engaged and the temporary block is removed.
+            if (const auto error = m_splitTunnel->activate(m_device->ifIndex()); error != LIBXTUN_OK) {
+                if (m_dns != nullptr) {
+                    m_dns->revert();
+                }
+                if (m_router != nullptr) {
+                    m_router->clearProxyRoutes();
+                }
+                if (m_killswitch != nullptr) {
+                    m_killswitch->protect({}, {}, {});
+                }
+                return failed(error);
             }
-            if (m_router != nullptr) {
-                m_router->clearProxyRoutes();
-            }
-            if (m_killswitch != nullptr) {
-                m_killswitch->protect({}, {}, {});
-            }
-            return failed(error);
         }
 
         m_device->resetReadCancellation();
@@ -237,7 +240,10 @@ namespace libxtun
 
         // Remove the exclusions first. deactivate() blocks all apps until the VPN settings are removed,
         // so excluded apps cannot go through the VPN routes in between.
-        const libxtun_error splitError = m_splitTunnel->deactivate();
+        libxtun_error splitError = LIBXTUN_OK;
+        if (m_splitTunnel) {
+            splitError = m_splitTunnel->deactivate();
+        }
         if (m_dns != nullptr) {
             m_dns->revert();
         }
@@ -252,7 +258,7 @@ namespace libxtun
         // The VPN settings are removed: allow traffic again.
         // If the driver was not reset, its state is unknown: keep everything blocked.
         // This method returns no error, so the block stays until the next attach or free.
-        if (splitError == LIBXTUN_OK) {
+        if (m_splitTunnel && splitError == LIBXTUN_OK) {
             m_splitTunnel->setTrafficBlocked(false);
         }
     }
@@ -365,7 +371,9 @@ namespace libxtun
         // Update them before the proxy reconnects: while they change, all traffic is blocked for a moment,
         // and a handshake sent at that time would be lost.
         // On error all apps stay blocked; the next network event tries again.
-        m_splitTunnel->updateAddresses();
+        if (m_splitTunnel) {
+            m_splitTunnel->updateAddresses();
+        }
         emit(Event::UplinkUpdate);
     }
 
@@ -380,7 +388,9 @@ namespace libxtun
         // to an interface, not to an address. Windows reports many address changes,
         // for example while the TUN addresses become usable right after attach,
         // and each restart would drop the handshake that is in progress.
-        m_splitTunnel->updateAddresses();
+        if (m_splitTunnel) {
+            m_splitTunnel->updateAddresses();
+        }
     }
 }
 

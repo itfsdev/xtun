@@ -97,7 +97,7 @@ namespace libxtun
             if (!::QueryServiceConfigW(service, config, static_cast<DWORD>(buffer.size()), &needed)) {
                 return splitError(::GetLastError());
             }
-            if (config->dwServiceType != SERVICE_KERNEL_DRIVER || config->dwStartType != SERVICE_DEMAND_START) {
+            if (config->dwServiceType != SERVICE_KERNEL_DRIVER) {
                 return LIBXTUN_ERR_SPLIT_DRIVER;
             }
             return LIBXTUN_OK;
@@ -121,7 +121,8 @@ namespace libxtun
         return config;
     }
 
-    ResultXtun<std::unique_ptr<WindowsSplitTunnel>> WindowsSplitTunnel::open(std::vector<std::wstring> paths)
+    ResultXtun<std::unique_ptr<WindowsSplitTunnel>> WindowsSplitTunnel::open(std::vector<std::wstring> paths,
+                                                                             const std::wstring &serviceName)
     {
         auto component = std::unique_ptr<WindowsSplitTunnel>(new WindowsSplitTunnel);
         component->m_paths = std::move(paths);
@@ -139,7 +140,7 @@ namespace libxtun
         if (!manager) {
             return fail(splitError(::GetLastError()));
         }
-        Service service(::OpenServiceW(manager.get(), L"XtunSplitTunnel",
+        Service service(::OpenServiceW(manager.get(), serviceName.c_str(),
                                        SERVICE_QUERY_CONFIG | SERVICE_QUERY_STATUS | SERVICE_START));
         if (!service) {
             return fail(splitError(::GetLastError()));

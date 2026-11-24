@@ -19,7 +19,7 @@ namespace libxtun
         virtual libxtun_error updateAddresses() = 0;
         virtual libxtun_error setTrafficBlocked(bool blocked) = 0;
 
-        static ResultXtun<std::unique_ptr<AppSplitTunnel>> create(const char *const *apps);
+        static ResultXtun<std::unique_ptr<AppSplitTunnel>> create(const char *const *apps, const char *serviceName);
     };
 }
 

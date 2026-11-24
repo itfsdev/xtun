@@ -214,9 +214,10 @@ namespace xtun
     class TunnelBuilder
     {
     public:
-        TunnelBuilder &withExcludedApps(std::vector<std::string> paths)
+        TunnelBuilder &withExcludedApps(std::vector<std::string> paths, std::string serviceName)
         {
             m_excludedApps = std::move(paths);
+            m_splitServiceName = std::move(serviceName);
             return *this;
         }
 
@@ -274,6 +275,7 @@ namespace xtun
 
             const auto excludedApps = internal::asArgv(m_excludedApps);
             opts.excluded_apps = excludedApps.data();
+            opts.split_service_name = m_splitServiceName.c_str();
 
             opts.killswitch_mode = m_killswitchMode;
             opts.mtu = m_mtu;
@@ -291,6 +293,7 @@ namespace xtun
         std::vector<std::string> m_dnsExceptions;
         std::vector<std::string> m_ifaceAddrs;
         std::vector<std::string> m_excludedApps;
+        std::string m_splitServiceName;
         libxtun_killswitch_mode m_killswitchMode = LIBXTUN_KILLSWITCH_MODE_DISABLED;
         int m_mtu = 0;
         int m_macosGroup = 0;

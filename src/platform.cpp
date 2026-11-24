@@ -117,42 +117,26 @@ namespace libxtun
 #endif
     }
 
-    namespace
-    {
-        class NoAppSplitTunnel final : public AppSplitTunnel
-        {
-        public:
-            libxtun_error activate(int) override
-            {
-                return LIBXTUN_OK;
-            }
-            libxtun_error deactivate() override
-            {
-                return LIBXTUN_OK;
-            }
-            libxtun_error updateAddresses() override
-            {
-                return LIBXTUN_OK;
-            }
-            libxtun_error setTrafficBlocked(bool) override
-            {
-                return LIBXTUN_OK;
-            }
-        };
-    }
-
-    ResultXtun<std::unique_ptr<AppSplitTunnel>> AppSplitTunnel::create(const char *const *apps)
+    ResultXtun<std::unique_ptr<AppSplitTunnel>> AppSplitTunnel::create(const char *const *apps, const char *serviceName)
     {
         if (apps == nullptr || *apps == nullptr) {
-            return std::unique_ptr<AppSplitTunnel>(std::make_unique<NoAppSplitTunnel>());
+            return std::unique_ptr<AppSplitTunnel>();
         }
 #if defined(_WIN32) && !defined(_M_ARM64EC) && (defined(_M_X64) || defined(__x86_64__))
         auto paths = split::executablePaths(apps);
         if (!paths) {
             return fail(paths.error());
         }
-        return WindowsSplitTunnel::open(std::move(paths).value());
+        if (serviceName == nullptr || *serviceName == '\0') {
+            return fail(LIBXTUN_ERR_INVALID_ARGS);
+        }
+        const auto utf16ServiceName = split::utf16(serviceName);
+        if (!utf16ServiceName) {
+            return fail(utf16ServiceName.error());
+        }
+        return WindowsSplitTunnel::open(std::move(paths).value(), utf16ServiceName.value());
 #else
+        (void)serviceName;
         return fail(LIBXTUN_ERR_UNSUPPORTED);
 #endif
     }

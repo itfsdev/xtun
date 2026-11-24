@@ -1,3 +1,4 @@
+#include "app_split_tunnel.h"
 #include "split_tunnel_windows.h"
 #include "split_tunnel_windows_data.h"
 #include "util/os.h"
@@ -87,7 +88,7 @@ TEST(SplitTunnelOwnership, RejectsSecondOwnerAndClosesItsHandle)
         GTEST_SKIP() << "Another process already owns the driver marker";
     }
 
-    const auto secondOwner = libxtun::WindowsSplitTunnel::open({});
+    const auto secondOwner = libxtun::WindowsSplitTunnel::open({}, utf16(test::SPLIT_SERVICE_NAME).value());
     ASSERT_FALSE(secondOwner);
     EXPECT_EQ(secondOwner.error(), LIBXTUN_ERR_SPLIT_BUSY);
 
@@ -107,11 +108,22 @@ TEST(SplitTunnelDriver, OpenReadsStartedState)
         GTEST_SKIP() << reason;
     }
 
-    const auto component = WindowsSplitTunnel::open({});
+    const auto component = WindowsSplitTunnel::open({}, utf16(test::SPLIT_SERVICE_NAME).value());
     ASSERT_TRUE(component) << libxtun_strerror(component.error());
     const auto state = component.value()->state();
     ASSERT_TRUE(state) << libxtun_strerror(state.error());
     EXPECT_EQ(state.value(), WindowsSplitTunnel::State::Started);
+}
+
+TEST(SplitTunnelDriver, OpenRejectsMissingService)
+{
+    if (const std::string reason = test::splitDriverSkipReason(); !reason.empty()) {
+        GTEST_SKIP() << reason;
+    }
+
+    const auto component = WindowsSplitTunnel::open({}, L"XtunMissingService");
+    ASSERT_FALSE(component);
+    EXPECT_EQ(component.error(), LIBXTUN_ERR_SPLIT_DRIVER);
 }
 
 TEST(SplitTunnelData, Utf8IsStrictAndPreservesUnicode)
@@ -192,6 +204,15 @@ TEST_F(SplitTunnelPaths, ResolvesPathsLongerThanMaxPath)
     const auto result = executablePath(pathUtf8(longImagePath));
     ASSERT_TRUE(result);
     EXPECT_TRUE(result.value().ends_with(L"\\probe.exe"));
+}
+
+TEST_F(SplitTunnelPaths, CreateRequiresServiceName)
+{
+    const std::string path = pathUtf8(m_imagePath);
+    const char *const apps[] = { path.c_str(), nullptr };
+    const auto result = AppSplitTunnel::create(apps, nullptr);
+    ASSERT_FALSE(result);
+    EXPECT_EQ(result.error(), LIBXTUN_ERR_INVALID_ARGS);
 }
 
 TEST(SplitTunnelData, AppBufferUsesUtf16ByteLengthsAndOffsetsAfterEntries)

@@ -37,7 +37,8 @@ namespace libxtun
 
         // Open the driver for one owner and prepare its WFP sublayers.
         // Start the driver service if needed. Reset settings left by an owner that crashed.
-        static ResultXtun<std::unique_ptr<WindowsSplitTunnel>> open(std::vector<std::wstring> paths);
+        static ResultXtun<std::unique_ptr<WindowsSplitTunnel>> open(std::vector<std::wstring> paths,
+                                                                    const std::wstring &serviceName);
         ~WindowsSplitTunnel();
 
         ResultXtun<State> state();

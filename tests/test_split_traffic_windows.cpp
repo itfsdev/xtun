@@ -175,7 +175,7 @@ namespace
         void createTunnel()
         {
             m_server = m_setup.createServer("server");
-            m_opts.killswitchMode(GetParam()).excludedApps({ pathUtf8(m_exclude) });
+            m_opts.killswitchMode(GetParam()).excludedApps({ pathUtf8(m_exclude) }, test::SPLIT_SERVICE_NAME);
             ASSERT_EQ(libxtun_tunnel_new(&m_tunnel, &m_opts.get()), LIBXTUN_OK);
         }
 

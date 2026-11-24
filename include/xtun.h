@@ -106,6 +106,7 @@ struct libxtun_tunnel_opts
      * If it's NULL or an empty, then per-app VPN exclusions are disabled.
      * Changing the list requires creating a new tunnel. */
     const char *const *excluded_apps;
+    const char *split_service_name;
 };
 
 typedef int (*libxtun_tunfactory_createtun)(const char *const *dns, const char *const *includeRoutes,
